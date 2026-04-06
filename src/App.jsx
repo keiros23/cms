@@ -1,3 +1,9 @@
+import { createClient } from '@supabase/supabase-js';
+const supabase = createClient(
+  "https://smljhunjjgybmrtoqgzs.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNtbGpodW5qamd5Ym1ydG9xZ3pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxNDA3MzcsImV4cCI6MjA4ODcxNjczN30.qSr5GS5JJTTwE33gaNoHUNRzhyNXU27ioQrOTMq5X2Y"
+);
+
 import { useState, useEffect, useRef } from "react";
 
 // ─── Users ────────────────────────────────────────────────────────────────────
@@ -644,17 +650,54 @@ export default function HSBCComplaints() {
   async function loadCases() {
     setLoading(true);
     try {
-      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 3000));
-      const load = window.storage?.get("hsbc_cases", true);
-      const r = await Promise.race([load, timeout]);
-      if (r && r.value) setCases(JSON.parse(r.value));
-      else { setCases(SAMPLE_CASES); await window.storage.set("hsbc_cases", JSON.stringify(SAMPLE_CASES), true); }
-    } catch { setCases(SAMPLE_CASES); }
+      const { data, error } = await supabase
+        .from('cases')
+        .select('*')
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      const mapped = (data || []).map(r => ({
+        id: r.id, caseNumber: r.case_number, localId: r.local_id,
+        dateRaised: r.date_raised, dateResolved: r.date_resolved,
+        managedBy: r.managed_by, vvip: r.vvip, ews: r.ews, csuite: r.csuite,
+        corporateName: r.corporate_name, clientPosition: r.client_position,
+        mastergroup: r.mastergroup, clientName: r.client_name,
+        clientRelationship: r.client_relationship, connection: r.connection,
+        countryClient: r.country_client, referrerName: r.referrer_name,
+        referrerBusinessLine: r.referrer_business_line, referrerCountry: r.referrer_country,
+        categoryRequest: r.category_request, clientRequest: r.client_request,
+        countryRequest: r.country_request, accountType: r.account_type,
+        transversal: r.transversal, informationProvided: r.information_provided,
+        specificRequest: r.specific_request, loggedBy: r.logged_by,
+        loggedAt: r.logged_at, lastEditedBy: r.last_edited_by,
+        lastEditedAt: r.last_edited_at, notes: r.notes || [],
+      }));
+      setCases(mapped);
+    } catch(e) {
+      console.error(e);
+      setCases([]);
+    }
     setLoading(false);
   }
 
   async function saveCases(updated) {
-    await window.storage.set("hsbc_cases", JSON.stringify(updated), true);
+    const rows = updated.map(c => ({
+      id: c.id, case_number: c.caseNumber, local_id: c.localId,
+      date_raised: c.dateRaised, date_resolved: c.dateResolved,
+      managed_by: c.managedBy, vvip: c.vvip, ews: c.ews, csuite: c.csuite,
+      corporate_name: c.corporateName, client_position: c.clientPosition,
+      mastergroup: c.mastergroup, client_name: c.clientName,
+      client_relationship: c.clientRelationship, connection: c.connection,
+      country_client: c.countryClient, referrer_name: c.referrerName,
+      referrer_business_line: c.referrerBusinessLine, referrer_country: c.referrerCountry,
+      category_request: c.categoryRequest, client_request: c.clientRequest,
+      country_request: c.countryRequest, account_type: c.accountType,
+      transversal: c.transversal, information_provided: c.informationProvided,
+      specific_request: c.specificRequest, logged_by: c.loggedBy,
+      logged_at: c.loggedAt, last_edited_by: c.lastEditedBy,
+      last_edited_at: c.lastEditedAt, notes: c.notes || [],
+    }));
+    const { error } = await supabase.from('cases').upsert(rows);
+    if (error) { console.error('Save error:', error); return; }
     setCases(updated);
   }
 
