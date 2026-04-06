@@ -566,11 +566,45 @@ function ImportView({ cases, saveCases, showToast, currentUser }) {
       });
     });
 
-    const updated = [...cases, ...newCases];
-    await saveCases(updated);
-    setImporting(false);
-    setImported(true);
-    showToast(`Imported ${newCases.length} cases.${skipped ? ` ${skipped} skipped (duplicate Local ID).` : ""}`);
+    if (newCases.length === 0) {
+      setImporting(false);
+      showToast(`Nothing to import. ${skipped} row(s) skipped (duplicate Local ID).`, "warn");
+      return;
+    }
+
+    // Insert in batches of 20 to avoid timeouts
+    try {
+      const toInsert = newCases.map(c => ({
+        id: c.id, case_number: c.caseNumber, local_id: c.localId,
+        date_raised: c.dateRaised, date_resolved: c.dateResolved,
+        managed_by: c.managedBy, vvip: c.vvip, ews: c.ews, csuite: c.csuite,
+        corporate_name: c.corporateName, client_position: c.clientPosition,
+        mastergroup: c.mastergroup, client_name: c.clientName,
+        client_relationship: c.clientRelationship, connection: c.connection,
+        country_client: c.countryClient, referrer_name: c.referrerName,
+        referrer_business_line: c.referrerBusinessLine, referrer_country: c.referrerCountry,
+        category_request: c.categoryRequest, client_request: c.clientRequest,
+        country_request: c.countryRequest, account_type: c.accountType,
+        transversal: c.transversal, information_provided: c.informationProvided,
+        specific_request: c.specificRequest, logged_by: c.loggedBy,
+        logged_at: c.loggedAt, last_edited_by: c.lastEditedBy,
+        last_edited_at: c.lastEditedAt, notes: c.notes || [],
+      }));
+      const batchSize = 20;
+      for (let i = 0; i < toInsert.length; i += batchSize) {
+        const batch = toInsert.slice(i, i + batchSize);
+        const { error } = await supabase.from("cases").upsert(batch);
+        if (error) throw error;
+      }
+      setCases([...cases, ...newCases]);
+      setImporting(false);
+      setImported(true);
+      showToast(`Imported ${newCases.length} cases.${skipped ? ` ${skipped} skipped (duplicate Local ID).` : ""}`);
+    } catch(e) {
+      console.error(e);
+      setImporting(false);
+      showToast("Import failed: " + (e.message || "unknown error"), "warn");
+    }
   }
 
   return (
@@ -638,7 +672,10 @@ function ImportView({ cases, saveCases, showToast, currentUser }) {
         <div style={{ ...card }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: HSBC_RED, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 14 }}>Step 4 — Import</div>
           <div style={{ fontSize: 13, color: HSBC_MUTED, marginBottom: 16 }}>This will add <strong>{rows.length} rows</strong> to the system. Rows with duplicate Local IDs will be skipped. This action cannot be undone.</div>
-          <button style={btn("primary")} onClick={handleImport} disabled={importing}>{importing ? "Importing…" : `Import ${rows.length} rows`}</button>
+          <button style={btn("primary")} onClick={handleImport} disabled={importing}>
+            {importing ? `Importing… please wait` : `Import ${rows.length} rows`}
+          </button>
+          {importing && <div style={{ fontSize: 12, color: HSBC_MUTED, marginTop: 10 }}>Importing in batches — this may take a moment for large files.</div>}
         </div>
       )}
 
