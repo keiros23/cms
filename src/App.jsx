@@ -285,7 +285,7 @@ function ClientsView({ cases, clientSearch, setClientSearch, setSelectedCase, se
         {clients.map(client => {
           const cc = cases.filter(c => c.clientName === client.clientName).sort((a,b) => new Date(a.dateRaised) - new Date(b.dateRaised));
           const openCount = cc.filter(c => !c.dateResolved).length;
-          const hasFlags = cc.some(c => c.vvip || c.csuite || c.ews);
+          const hasFlags = cc.some(c => c.vvip || c.csuite || c.ews || c.t400);
           const isExpanded = expandedClient === client.clientName;
           const timeline = cc.reduce((acc, c) => {
             const last = acc[acc.length - 1];
@@ -316,6 +316,7 @@ function ClientsView({ cases, clientSearch, setClientSearch, setSelectedCase, se
                     {cc.some(c => c.vvip) && <Badge label="VVIP" color="#7c3aed" bg="#f5f3ff" />}
                     {cc.some(c => c.csuite) && <Badge label="C-Suite" color="#0369a1" bg="#e0f2fe" />}
                     {cc.some(c => c.ews) && <Badge label="EWS" color="#b45309" bg="#fef3c7" />}
+                    {cc.some(c => c.t400) && <Badge label="T400" color="#0f766e" bg="#ccfbf1" />}
                   </div>
                 </div>
                 <span style={{ fontSize: 13, color: HSBC_MUTED, flexShrink: 0, marginLeft: 12 }}>{isExpanded ? "▲" : "▼"}</span>
@@ -423,7 +424,7 @@ function AutoSuggestInput({ value, onChange, onSelect, suggestions, placeholder,
 
 // ─── Empty form ────────────────────────────────────────────────────────────────
 const emptyForm = () => ({
-  localId: "", dateRaised: new Date().toISOString().split("T")[0], dateResolved: "", managedBy: "", vvip: false, ews: false, csuite: false,
+  localId: "", dateRaised: new Date().toISOString().split("T")[0], dateResolved: "", managedBy: "", vvip: false, ews: false, csuite: false, t400: false,
   corporateName: "", clientPosition: "", mastergroup: "", clientName: "", clientRelationship: "",
   connection: "", countryClient: "", referrerName: "", referrerBusinessLine: "", referrerCountry: "",
   categoryRequest: "", clientRequest: "", countryRequest: "", accountType: "", transversal: "",
@@ -443,7 +444,7 @@ const SAMPLE_CASES = [
 ];
 
 // ─── Import View ──────────────────────────────────────────────────────────────
-function ImportView({ cases, saveCases, showToast, currentUser }) {
+function ImportView({ cases, saveCases, showToast, currentUser, onImportComplete }) {
   const [headers, setHeaders] = useState([]);
   const [rows, setRows] = useState([]);
   const [mapping, setMapping] = useState({});
@@ -464,7 +465,7 @@ function ImportView({ cases, saveCases, showToast, currentUser }) {
     { key: "clientRelationship",   label: "Client Relationship" },
     { key: "countryClient",        label: "Client Country" },
     { key: "connection",           label: "Connection" },
-    { key: "mastergroup",          label: "Mastergroup" },
+    { key: "mastergroup",          label: "CIB Mastergroup" },
     { key: "referrerName",         label: "Referrer Name" },
     { key: "referrerBusinessLine", label: "Referrer Business Line" },
     { key: "referrerCountry",      label: "Referrer Country" },
@@ -476,6 +477,7 @@ function ImportView({ cases, saveCases, showToast, currentUser }) {
     { key: "vvip",                 label: "VVIP (Yes/No)" },
     { key: "ews",                  label: "EWS (Yes/No)" },
     { key: "csuite",               label: "C-Suite (Yes/No)" },
+    { key: "t400",                 label: "Top 400 (Yes/No)" },
     { key: "informationProvided",  label: "Information Provided" },
     { key: "specificRequest",      label: "Specific Request" },
   ];
@@ -569,6 +571,7 @@ function ImportView({ cases, saveCases, showToast, currentUser }) {
         vvip:   bool(get("vvip")),
         ews:    bool(get("ews")),
         csuite: bool(get("csuite")),
+        t400:   bool(get("t400")),
         informationProvided: get("informationProvided"),
         specificRequest:     get("specificRequest"),
         loggedBy: currentUser.name, loggedAt: now,
@@ -589,7 +592,7 @@ function ImportView({ cases, saveCases, showToast, currentUser }) {
       const toInsert = newCases.map(c => ({
         id: c.id, case_number: c.caseNumber, local_id: c.localId,
         date_raised: c.dateRaised, date_resolved: c.dateResolved,
-        managed_by: c.managedBy, vvip: c.vvip, ews: c.ews, csuite: c.csuite,
+        managed_by: c.managedBy, vvip: c.vvip, ews: c.ews, csuite: c.csuite, t400: c.t400||false,
         corporate_name: c.corporateName, client_position: c.clientPosition,
         mastergroup: c.mastergroup, client_name: c.clientName,
         client_relationship: c.clientRelationship, connection: c.connection,
@@ -611,7 +614,7 @@ function ImportView({ cases, saveCases, showToast, currentUser }) {
         const batchNum = Math.floor(i / batchSize) + 1;
         setImportProgress(Math.round((batchNum / totalBatches) * 100));
       }
-      setCases([...cases, ...newCases]);
+      await onImportComplete();
       setImporting(false);
       setImported(true);
       showToast(`Imported ${newCases.length} cases.${skipped ? ` ${skipped} skipped (duplicate Local ID).` : ""}`);
@@ -759,7 +762,7 @@ export default function HSBCComplaints() {
       const mapped = (data || []).map(r => ({
         id: r.id, caseNumber: r.case_number, localId: r.local_id,
         dateRaised: r.date_raised, dateResolved: r.date_resolved,
-        managedBy: r.managed_by, vvip: r.vvip, ews: r.ews, csuite: r.csuite,
+        managedBy: r.managed_by, vvip: r.vvip, ews: r.ews, csuite: r.csuite, t400: r.t400||false,
         corporateName: r.corporate_name, clientPosition: r.client_position,
         mastergroup: r.mastergroup, clientName: r.client_name,
         clientRelationship: r.client_relationship, connection: r.connection,
@@ -784,7 +787,7 @@ export default function HSBCComplaints() {
     const rows = updated.map(c => ({
       id: c.id, case_number: c.caseNumber, local_id: c.localId,
       date_raised: c.dateRaised, date_resolved: c.dateResolved,
-      managed_by: c.managedBy, vvip: c.vvip, ews: c.ews, csuite: c.csuite,
+      managed_by: c.managedBy, vvip: c.vvip, ews: c.ews, csuite: c.csuite, t400: c.t400||false,
       corporate_name: c.corporateName, client_position: c.clientPosition,
       mastergroup: c.mastergroup, client_name: c.clientName,
       client_relationship: c.clientRelationship, connection: c.connection,
@@ -848,7 +851,7 @@ export default function HSBCComplaints() {
   }
 
   function openEdit(c) {
-    setForm({ localId:c.localId||"", dateRaised:c.dateRaised||"", dateResolved:c.dateResolved||"", managedBy:c.managedBy||"", vvip:c.vvip||false, ews:c.ews||false, csuite:c.csuite||false, corporateName:c.corporateName||"", clientPosition:c.clientPosition||"", mastergroup:c.mastergroup||"", clientName:c.clientName||"", clientRelationship:c.clientRelationship||"", connection:c.connection||"", countryClient:c.countryClient||"", referrerName:c.referrerName||"", referrerBusinessLine:c.referrerBusinessLine||"", referrerCountry:c.referrerCountry||"", categoryRequest:c.categoryRequest||"", clientRequest:c.clientRequest||"", countryRequest:c.countryRequest||"", accountType:c.accountType||"", transversal:c.transversal||"", informationProvided:c.informationProvided||"", specificRequest:c.specificRequest||"" });
+    setForm({ localId:c.localId||"", dateRaised:c.dateRaised||"", dateResolved:c.dateResolved||"", managedBy:c.managedBy||"", vvip:c.vvip||false, ews:c.ews||false, csuite:c.csuite||false, t400:c.t400||false, corporateName:c.corporateName||"", clientPosition:c.clientPosition||"", mastergroup:c.mastergroup||"", clientName:c.clientName||"", clientRelationship:c.clientRelationship||"", connection:c.connection||"", countryClient:c.countryClient||"", referrerName:c.referrerName||"", referrerBusinessLine:c.referrerBusinessLine||"", referrerCountry:c.referrerCountry||"", categoryRequest:c.categoryRequest||"", clientRequest:c.clientRequest||"", countryRequest:c.countryRequest||"", accountType:c.accountType||"", transversal:c.transversal||"", informationProvided:c.informationProvided||"", specificRequest:c.specificRequest||"" });
     setEditCase(c); setShowForm(true); setSelectedCase(null); setFormErrors({});
   }
 
@@ -1100,6 +1103,7 @@ export default function HSBCComplaints() {
                   <Field label="VVIP"><Toggle value={form.vvip} onChange={setF("vvip")} /></Field>
                   <Field label="EWS in Any Market"><Toggle value={form.ews} onChange={setF("ews")} /></Field>
                   <Field label="C-Suite"><Toggle value={form.csuite} onChange={setF("csuite")} /></Field>
+                  <Field label="Top 400"><Toggle value={form.t400} onChange={setF("t400")} /></Field>
                 </div>
 
                 <div style={{ fontSize: 11, fontWeight: 700, color: HSBC_RED, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12, paddingBottom: 6, borderBottom: `1px solid #f0f0f0` }}>Client Information <span style={{ color: HSBC_MUTED, fontSize: 10, fontWeight: 400, textTransform: "none" }}>— snapshot at time of case</span></div>
@@ -1134,7 +1138,7 @@ export default function HSBCComplaints() {
                   <Field label="Country Client Based"><SearchableDropdown options={COUNTRIES} value={form.countryClient} onChange={setF("countryClient")} placeholder="Search country…" /></Field>
                   <Field label="Corporate Name (at time of case)"><input style={inp} value={form.corporateName} onChange={e => setF("corporateName")(e.target.value)} placeholder="Company name" /></Field>
                   <Field label="Position / Job Title (at time of case)"><input style={inp} value={form.clientPosition} onChange={e => setF("clientPosition")(e.target.value)} placeholder="e.g. Managing Director" /></Field>
-                  <Field label="Top 400 CIB Mastergroup"><input style={inp} value={form.mastergroup} onChange={e => setF("mastergroup")(e.target.value)} placeholder="MG name" /></Field>
+                  <Field label="CIB Mastergroup"><input style={inp} value={form.mastergroup} onChange={e => setF("mastergroup")(e.target.value)} placeholder="MG name" /></Field>
                   <Field label="Connection"><input style={inp} value={form.connection} onChange={e => setF("connection")(e.target.value)} placeholder="e.g. Group CEO" /></Field>
                 </div>
 
@@ -1196,6 +1200,7 @@ export default function HSBCComplaints() {
                               {c.vvip   && <Badge label="VVIP"    color="#7c3aed" bg="#f5f3ff" />}
                               {c.csuite && <Badge label="C-Suite" color="#0369a1" bg="#e0f2fe" />}
                               {c.ews    && <Badge label="EWS"     color="#b45309" bg="#fef3c7" />}
+                              {c.t400   && <Badge label="T400"    color="#0f766e" bg="#ccfbf1" />}
                             </div>
                           </td>
                           <td style={td} onClick={e => e.stopPropagation()}>
@@ -1266,6 +1271,7 @@ export default function HSBCComplaints() {
                       {c.vvip   ? <Badge label="VVIP"    color="#7c3aed" bg="#f5f3ff" /> : <span style={{ fontSize: 12, color: HSBC_MUTED }}>No VVIP</span>}
                       {c.csuite ? <Badge label="C-Suite" color="#0369a1" bg="#e0f2fe" /> : null}
                       {c.ews    ? <Badge label="EWS"     color="#b45309" bg="#fef3c7" /> : null}
+                      {c.t400   ? <Badge label="T400"    color="#0f766e" bg="#ccfbf1" /> : null}
                     </div>
                   </div>
                   <div style={card}>
@@ -1444,6 +1450,7 @@ export default function HSBCComplaints() {
                     { label:"VVIP",    filter: c => c.vvip,   badge:{ color:"#7c3aed", bg:"#f5f3ff" } },
                     { label:"C-Suite", filter: c => c.csuite, badge:{ color:"#0369a1", bg:"#e0f2fe" } },
                     { label:"EWS",     filter: c => c.ews,    badge:{ color:"#b45309", bg:"#fef3c7" } },
+                    { label:"T400",    filter: c => c.t400,   badge:{ color:"#0f766e", bg:"#ccfbf1" } },
                   ].map(({ label: l, filter, badge }) => {
                     const fc = aCases.filter(filter);
                     return (
@@ -1457,7 +1464,7 @@ export default function HSBCComplaints() {
                     );
                   })}
                   {(() => {
-                    const nf = aCases.filter(c => !c.vvip && !c.csuite && !c.ews);
+                    const nf = aCases.filter(c => !c.vvip && !c.csuite && !c.ews && !c.t400);
                     return (
                       <tr style={{ borderBottom: `1px solid #f5f5f5`, background: "#fafafa" }}>
                         <td style={td}><Badge label="No Flag" color={HSBC_MUTED} bg="#f3f4f6" /></td>
@@ -1483,7 +1490,7 @@ export default function HSBCComplaints() {
 
         {/* ── IMPORT ── */}
         {view === "import" && (
-          <ImportView cases={cases} saveCases={saveCases} showToast={showToast} currentUser={currentUser} />
+          <ImportView cases={cases} saveCases={saveCases} showToast={showToast} currentUser={currentUser} onImportComplete={loadCases} />
         )}
       </div>
     </div>
