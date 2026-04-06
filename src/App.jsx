@@ -379,9 +379,51 @@ function ClientsView({ cases, clientSearch, setClientSearch, setSelectedCase, se
   );
 }
 
+// ─── Auto-Suggest Input ───────────────────────────────────────────────────────
+function AutoSuggestInput({ value, onChange, onSelect, suggestions, placeholder, style, inputStyle }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef();
+
+  useEffect(() => {
+    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const filtered = value.trim().length > 0
+    ? [...new Map(suggestions.filter(s => s.label.toLowerCase().includes(value.toLowerCase())).map(s => [s.label, s])).values()].slice(0, 8)
+    : [];
+
+  return (
+    <div ref={ref} style={{ position: "relative", ...(style||{}) }}>
+      <input
+        style={inputStyle || inp}
+        value={value}
+        placeholder={placeholder}
+        onChange={e => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        autoComplete="off"
+      />
+      {open && filtered.length > 0 && (
+        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#fff", border: `1px solid ${HSBC_BORDER}`, borderRadius: 4, zIndex: 999, boxShadow: "0 4px 12px rgba(0,0,0,0.1)", maxHeight: 220, overflowY: "auto" }}>
+          {filtered.map((s, i) => (
+            <div key={i} onClick={() => { onSelect(s); setOpen(false); }}
+              style={{ padding: "9px 12px", cursor: "pointer", borderBottom: `1px solid #f5f5f5` }}
+              onMouseEnter={e => e.currentTarget.style.background = "#fafafa"}
+              onMouseLeave={e => e.currentTarget.style.background = "#fff"}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: HSBC_DARK }}>{s.label}</div>
+              {s.sub && <div style={{ fontSize: 11, color: HSBC_MUTED, marginTop: 1 }}>{s.sub}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Empty form ────────────────────────────────────────────────────────────────
 const emptyForm = () => ({
-  localId: "", dateRaised: "", dateResolved: "", managedBy: "", vvip: false, ews: false, csuite: false,
+  localId: "", dateRaised: new Date().toISOString().split("T")[0], dateResolved: "", managedBy: "", vvip: false, ews: false, csuite: false,
   corporateName: "", clientPosition: "", mastergroup: "", clientName: "", clientRelationship: "",
   connection: "", countryClient: "", referrerName: "", referrerBusinessLine: "", referrerCountry: "",
   categoryRequest: "", clientRequest: "", countryRequest: "", accountType: "", transversal: "",
@@ -963,7 +1005,30 @@ export default function HSBCComplaints() {
 
                 <div style={{ fontSize: 11, fontWeight: 700, color: HSBC_RED, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12, paddingBottom: 6, borderBottom: `1px solid #f0f0f0` }}>Case Details</div>
                 <div style={{ ...grid3, marginBottom: 16 }}>
-                  <Field label="Local Identifier No."><input style={inp} value={form.localId} onChange={e => setF("localId")(e.target.value)} placeholder="e.g. HK-2024-001" /></Field>
+                  <Field label="Local Identifier No.">
+                    <AutoSuggestInput
+                      value={form.localId}
+                      placeholder="e.g. HK-2024-001"
+                      suggestions={cases.filter(c => c.localId).map(c => ({ label: c.localId, sub: c.clientName, case: c }))}
+                      onChange={v => setF("localId")(v)}
+                      onSelect={s => {
+                        const last = cases.find(c => c.localId === s.label);
+                        if (last) {
+                          setForm(p => ({ ...p,
+                            localId: last.localId, clientName: last.clientName||"",
+                            corporateName: last.corporateName||"", clientPosition: last.clientPosition||"",
+                            clientRelationship: last.clientRelationship||"", countryClient: last.countryClient||"",
+                            connection: last.connection||"", mastergroup: last.mastergroup||"",
+                            vvip: last.vvip||false, ews: last.ews||false, csuite: last.csuite||false,
+                            referrerName: last.referrerName||"", referrerBusinessLine: last.referrerBusinessLine||"",
+                            referrerCountry: last.referrerCountry||"",
+                          }));
+                        } else {
+                          setF("localId")(s.label);
+                        }
+                      }}
+                    />
+                  </Field>
                   <Field label="Date Case Raised" required><input style={errInp("dateRaised")} type="date" value={form.dateRaised} onChange={e => setF("dateRaised")(e.target.value)} /></Field>
                   <Field label="Date Case Resolved"><input style={inp} type="date" value={form.dateResolved} onChange={e => setF("dateResolved")(e.target.value)} /></Field>
                   <Field label="Case Managed By" required><Select value={form.managedBy} onChange={v => { setF("managedBy")(v); setFormErrors(p => ({ ...p, managedBy: false })); }} options={CASE_MANAGERS} placeholder="Select…" /></Field>
@@ -980,7 +1045,32 @@ export default function HSBCComplaints() {
 
                 <div style={{ fontSize: 11, fontWeight: 700, color: HSBC_RED, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12, paddingBottom: 6, borderBottom: `1px solid #f0f0f0` }}>Client Information <span style={{ color: HSBC_MUTED, fontSize: 10, fontWeight: 400, textTransform: "none" }}>— snapshot at time of case</span></div>
                 <div style={{ ...grid3, marginBottom: 16 }}>
-                  <Field label="Client Name" required><input style={errInp("clientName")} value={form.clientName} onChange={e => { setF("clientName")(e.target.value); setFormErrors(p => ({ ...p, clientName: false })); }} placeholder="Full name" /></Field>
+                  <Field label="Client Name" required>
+                    <AutoSuggestInput
+                      value={form.clientName}
+                      inputStyle={errInp("clientName")}
+                      placeholder="Full name"
+                      suggestions={[...new Map(cases.map(c => [c.clientName, { label: c.clientName, sub: [c.clientPosition, c.corporateName].filter(Boolean).join(" · "), case: c }])).values()].filter(s => s.label)}
+                      onChange={v => { setF("clientName")(v); setFormErrors(p => ({ ...p, clientName: false })); }}
+                      onSelect={s => {
+                        const last = [...cases].filter(c => c.clientName === s.label).sort((a,b) => new Date(b.dateRaised)-new Date(a.dateRaised))[0];
+                        if (last) {
+                          setForm(p => ({ ...p,
+                            clientName: last.clientName, corporateName: last.corporateName||"",
+                            clientPosition: last.clientPosition||"", clientRelationship: last.clientRelationship||"",
+                            countryClient: last.countryClient||"", connection: last.connection||"",
+                            mastergroup: last.mastergroup||"", vvip: last.vvip||false,
+                            ews: last.ews||false, csuite: last.csuite||false,
+                            referrerName: last.referrerName||"", referrerBusinessLine: last.referrerBusinessLine||"",
+                            referrerCountry: last.referrerCountry||"",
+                          }));
+                        } else {
+                          setF("clientName")(s.label);
+                        }
+                        setFormErrors(p => ({ ...p, clientName: false }));
+                      }}
+                    />
+                  </Field>
                   <Field label="Client Relationship"><Select value={form.clientRelationship} onChange={setF("clientRelationship")} options={CLIENT_RELATIONSHIPS} placeholder="Select…" /></Field>
                   <Field label="Country Client Based"><SearchableDropdown options={COUNTRIES} value={form.countryClient} onChange={setF("countryClient")} placeholder="Search country…" /></Field>
                   <Field label="Corporate Name (at time of case)"><input style={inp} value={form.corporateName} onChange={e => setF("corporateName")(e.target.value)} placeholder="Company name" /></Field>
