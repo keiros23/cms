@@ -450,6 +450,7 @@ function ImportView({ cases, saveCases, showToast, currentUser }) {
   const [preview, setPreview] = useState([]);
   const [imported, setImported] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
   const fileRef = useRef();
 
   const CMS_FIELDS = [
@@ -528,11 +529,21 @@ function ImportView({ cases, saveCases, showToast, currentUser }) {
     const newCases = [];
     let skipped = 0;
 
+    const parseDate = v => {
+      if (!v) return "";
+      const dmySlash = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (dmySlash) return `${dmySlash[3]}-${dmySlash[2].padStart(2,"0")}-${dmySlash[1].padStart(2,"0")}`;
+      const dmyDash = v.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+      if (dmyDash) return `${dmyDash[3]}-${dmyDash[2].padStart(2,"0")}-${dmyDash[1].padStart(2,"0")}`;
+      if (v.match(/^\d{4}-\d{2}-\d{2}$/)) return v;
+      return v;
+    };
+
     rows.forEach((row, i) => {
       const get = key => mapping[key] !== undefined ? (row[parseInt(mapping[key])] || "").trim() : "";
       const localId = get("localId");
       if (localId && existing.has(localId)) { skipped++; return; }
-      const bool = v => ["yes","true","1","y"].includes(v.toLowerCase());
+      const bool = v => ["yes","true","1","y"].includes((v||"").toLowerCase());
       newCases.push({
         id: `import_${Date.now()}_${i}`,
         caseNumber: generateCaseId(cases.length + newCases.length),
@@ -572,6 +583,7 @@ function ImportView({ cases, saveCases, showToast, currentUser }) {
       return;
     }
 
+    setImportProgress(0);
     // Insert in batches of 20 to avoid timeouts
     try {
       const toInsert = newCases.map(c => ({
@@ -591,10 +603,13 @@ function ImportView({ cases, saveCases, showToast, currentUser }) {
         last_edited_at: c.lastEditedAt, notes: c.notes || [],
       }));
       const batchSize = 20;
+      const totalBatches = Math.ceil(toInsert.length / batchSize);
       for (let i = 0; i < toInsert.length; i += batchSize) {
         const batch = toInsert.slice(i, i + batchSize);
         const { error } = await supabase.from("cases").upsert(batch);
         if (error) throw error;
+        const batchNum = Math.floor(i / batchSize) + 1;
+        setImportProgress(Math.round((batchNum / totalBatches) * 100));
       }
       setCases([...cases, ...newCases]);
       setImporting(false);
@@ -673,9 +688,16 @@ function ImportView({ cases, saveCases, showToast, currentUser }) {
           <div style={{ fontSize: 12, fontWeight: 700, color: HSBC_RED, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 14 }}>Step 4 — Import</div>
           <div style={{ fontSize: 13, color: HSBC_MUTED, marginBottom: 16 }}>This will add <strong>{rows.length} rows</strong> to the system. Rows with duplicate Local IDs will be skipped. This action cannot be undone.</div>
           <button style={btn("primary")} onClick={handleImport} disabled={importing}>
-            {importing ? `Importing… please wait` : `Import ${rows.length} rows`}
+            {importing ? `Importing… ${importProgress}%` : `Import ${rows.length} rows`}
           </button>
-          {importing && <div style={{ fontSize: 12, color: HSBC_MUTED, marginTop: 10 }}>Importing in batches — this may take a moment for large files.</div>}
+          {importing && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ height: 6, background: "#f0f0f0", borderRadius: 4, overflow: "hidden", width: "100%", maxWidth: 320 }}>
+                <div style={{ height: "100%", background: HSBC_RED, borderRadius: 4, width: `${importProgress}%`, transition: "width 0.3s ease" }} />
+              </div>
+              <div style={{ fontSize: 11, color: HSBC_MUTED, marginTop: 5 }}>{importProgress}% complete — please do not close this page</div>
+            </div>
+          )}
         </div>
       )}
 
